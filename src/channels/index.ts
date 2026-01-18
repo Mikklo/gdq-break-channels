@@ -1,6 +1,5 @@
 import './channels';
 
-import './template';
 import './breakout';
 import './cave-story';
 import './desert-bus';
@@ -24,5 +23,6 @@ import './cookie-clicker';
 import './balatro';
 import './snake';
 import './velocity-quest';
+import './conways-game-of-life';
 
 export * from './channels';
