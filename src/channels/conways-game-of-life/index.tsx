@@ -7,10 +7,6 @@ import  { useListenFor, useReplicant } from 'use-nodecg';
 import styled from '@emotion/styled';
 import TweenNumber from '@gdq/lib/components/TweenNumber';
 
-// TODO!
-// Fix so that when the game launches, it draws the current total donations sum with large digits at the middle of the grid in white for 1-2 seconds (adjustable in CONFIGURATION BLOCK) and then they are turned alive and the game starts.
-
-
 // ============= CONFIGURATION VARIABLES =============
 const CONFIG = {
 	// Grid configuration - adjust these to change cell count and performance
@@ -22,6 +18,10 @@ const CONFIG = {
 
 	// Donation display configuration
 	PENDING_DURATION: 3000,  // How long donation cells show in white before becoming alive (ms)
+
+	// Initial total display configuration
+	INITIAL_TOTAL_DURATION: 2000,  // How long the initial total shows before becoming alive (ms)
+	INITIAL_TOTAL_COLOR: 'white',  // Color for the initial total display
 };
 
 // Cell states
@@ -29,6 +29,7 @@ enum CellState {
 	DEAD = 0,
 	ALIVE = 1,
 	PENDING = 2,  // Pending cells shown by donations
+	INITIAL = 3,  // Initial total display cells
 }
 
 type GridType = CellState[][];
@@ -49,6 +50,7 @@ function ConwaysGameOfLife(props: ChannelProps)  {
 	const  [total] = useReplicant<Total | null>('total', null);
 	const  [grid, setGrid] = useState<GridType>(setupGrid);
 	const pendingCellsRef = useRef<PendingCell[]>([]);
+	const hasShownInitialTotal = useRef(false);  // Track if we've shown the initial total
 
     const runGame = () => {
         setGrid((oldGrid) => updateGrid(oldGrid, pendingCellsRef.current));
@@ -59,6 +61,46 @@ function ConwaysGameOfLife(props: ChannelProps)  {
 
         return () => clearInterval(intervalId);
      }, []); // Remove grid dependency to avoid recreation
+
+	// Display initial total on mount (only once)
+	useEffect(() => {
+		if (total?.raw && !hasShownInitialTotal.current) {
+			hasShownInitialTotal.current = true;  // Mark as shown
+			const initialCells: PendingCell[] = [];
+
+			setGrid((oldGrid) => {
+				const newGrid = oldGrid.map(row => [...row]);  // Shallow copy
+
+				// Display the total using large digits
+				setLargeDigitsAsInitial(newGrid, String(Math.floor(total.raw)), initialCells);
+
+				// Schedule cells to become alive after initial duration
+				initialCells.forEach((cell) => {
+					const timeout = setTimeout(() => {
+						setGrid((grid) => {
+							const updatedGrid = grid.map(row => [...row]);
+							if (updatedGrid[cell.row][cell.col] === CellState.INITIAL) {
+								updatedGrid[cell.row][cell.col] = CellState.ALIVE;
+							}
+							return updatedGrid;
+						});
+
+						// Remove from pending cells list
+						pendingCellsRef.current = pendingCellsRef.current.filter(
+							(c) => !(c.row === cell.row && c.col === cell.col)
+						);
+					}, CONFIG.INITIAL_TOTAL_DURATION);
+
+					cell.timeout = timeout;
+				});
+
+				// Add to pending cells reference
+				pendingCellsRef.current.push(...initialCells);
+
+				return newGrid;
+			});
+		}
+	}, [total]); // Run when total becomes available
 
     useListenFor('donation', (donation: FormattedDonation) => {
 		// Calculate random position
@@ -128,6 +170,7 @@ const Cell = styled.div<{ cellState: CellState }>`
     border: 0.5px solid rgba(0, 0, 0, 0.3);
 	aspect-ratio: 1;
     background-color: ${({ cellState }) => {
+		if (cellState === CellState.INITIAL) return CONFIG.INITIAL_TOTAL_COLOR;  // Initial total display
 		if (cellState === CellState.PENDING) return 'white';  // Donation pending (white)
 		if (cellState === CellState.ALIVE) return 'rgb(81, 0, 119)';  // Alive cells (purple)
 		return 'rgb(6, 25, 67)';  // Dead cells (dark blue)
@@ -178,8 +221,8 @@ function updateGrid(grid: GridType, pendingCells: PendingCell[]): GridType {
 
     for (let i = 0; i < grid.length; i++) {
         for (let j = 0; j < grid[i].length; j++) {
-			// Skip pending cells - they don't participate in the game yet
-			if (grid[i][j] === CellState.PENDING) continue;
+			// Skip pending and initial cells - they don't participate in the game yet
+			if (grid[i][j] === CellState.PENDING || grid[i][j] === CellState.INITIAL) continue;
 
             let liveNeighbors = countLiveNeighbors(grid, i, j);
 
@@ -221,8 +264,108 @@ const digits: { [key: number]: number[][] } = {
     9: [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 3]],
 };
 
+// Define the shapes for each digit in a larger style to use for start donation total
+const digitsLarge: { [key: number]: number[][] } = {
+	0: [[1, 3], [1, 4], [1, 5], 
+		[2, 2], [2, 3], [2, 6], 
+		[3, 2], [3, 3], [3, 6], [3, 7],
+		[4, 1], [4, 2], [4, 6], [4, 7],
+		[5, 1], [5, 2], [5, 6], [5, 7],
+		[6, 1], [6, 2], [6, 6], [6, 7],
+		[7, 2], [7, 5], [7, 6],
+	 	[8, 3], [8, 4], [8, 3]],
+	1: [[1, 4], [1, 5], [1, 6], 
+		[2, 5], [2, 6],
+		[3, 5], [3, 6],
+		[4, 5], [4, 6],
+		[5, 4], [5, 5],
+		[6, 4], [6, 5],
+		[7, 4], [7, 5],
+	 	[8, 3], [8, 4], [8, 5], [8, 6]],
+	2: [[1, 3], [1, 4], [1, 5], [1, 6],
+		[2, 2], [2, 3], [2, 6], [2, 7],
+		[3, 6], [3, 7],
+		[4, 5], [4, 6], [4, 7],
+		[5, 3], [5, 4], [5, 5], [5, 6],
+		[6, 2], [6, 3],
+		[7, 1], [7, 2],
+	 	[8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 6]],
+	3: [[1, 2], [1, 3], [1, 4], [1, 5],
+		[2, 1], [2, 2], [2, 5], [2, 6],
+		[3, 5], [3, 6],
+		[4, 4], [4, 5],
+		[5, 5], [5, 6],
+		[6, 1], [6, 6], [6, 7],
+		[7, 1], [7, 2], [7, 5], [7, 6], [7, 7],
+	 	[8, 2], [8, 3], [8, 4], [8, 5], [8, 6]],
+	4: [[1, 2], [1, 3], [1, 5], [1, 6],
+		[2, 1], [2, 2], [2, 5], [2, 6],
+		[3, 1], [3, 2], [3, 5], [3, 6],
+		[4, 1], [4, 2], [4, 4], [4, 5],
+		[5, 1], [5, 2], [5, 4], [5, 5],
+		[6, 1], [6, 2], [6, 3], [6, 4], [6, 5], [6, 6],
+		[7, 4], [7, 5],
+	 	[8, 4], [8, 5]],
+	5: [[1, 2], [1, 3], [1, 4], [1, 5], [1, 6],
+		[2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7],
+		[3, 2], [3, 3],
+		[4, 2], [4, 3],
+		[5, 2], [5, 3], [5, 4], [5, 5], [5, 6],
+		[6, 6], [6, 7],
+		[7, 1], [7, 2], [7, 6], [7, 7],
+	 	[8, 2], [8, 3], [8, 4], [8, 5], [8, 6]],
+	6: [[1, 3], [1, 4], [1, 5],
+		[2, 2], [2, 3],
+		[3, 1], [3, 2],
+		[4, 1], [4, 2], [4, 3], [4, 4], [4, 5], [4, 6],
+		[5, 1], [5, 2], [5, 5], [5, 6], [5, 7],
+		[6, 1], [6, 2], [6, 6], [6, 7],
+		[7, 2], [7, 3], [7, 6], [7, 7],
+	 	[8, 3], [8, 4], [8, 5], [8, 6]],
+	7: [[1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7],
+		[2, 1], [2, 2], [2, 6], [2, 7],
+		[3, 1], [3, 2], [3, 5], [3, 6],
+		[4, 4], [4, 5],
+		[5, 4], [5, 5],
+		[6, 3], [6, 4],
+		[7, 3], [7, 4],
+	 	[8, 3], [8, 4]],
+	8: [[1, 3], [1, 4], [1, 5],
+		[2, 2], [2, 3], [2, 5], [2, 6],
+		[3, 2], [3, 3], [3, 5], [3, 6],
+		[4, 3], [4, 4], [4, 5],
+		[5, 2], [5, 3], [5, 6],
+		[6, 1], [6, 2], [6, 6], [6, 7],
+		[7, 1], [7, 2], [7, 5], [7, 6], [7, 7],
+	 	[8, 2], [8, 3], [8, 5], [8, 6], [8, 7]],
+	9: [[1, 2], [1, 3], [1, 4], [1, 5], [1, 6],
+		[2, 1], [2, 2], [2, 3], [2, 6], [2, 7],
+		[3, 1], [3, 2], [3, 6], [3, 7],
+		[4, 1], [4, 2], [4, 5], [4, 6],
+		[5, 2], [5, 3], [5, 4], [5, 5], [5, 6],
+		[6, 4], [6, 5],
+		[7, 3], [7, 4],
+	 	[8, 3], [8, 4]],
+}
+
 const symbols: { [key: number]: number[][] } = {
-    0: [[1, 2], [2, 1], [2, 2], [2, 3], [3, 1], [4, 1], [4, 2], [4, 3], [5, 3], [6, 1], [6, 2], [6, 3], [7, 2]] //Dollar Sign
+    0: [[1, 2], [2, 1], [2, 2], [2, 3], [3, 1], [4, 1], [4, 2], [4, 3], [5, 3], [6, 1], [6, 2], [6, 3], [7, 2]] //Dollar Sign (small)
+};
+
+// Large dollar sign for initial total display (10 cells high, 7 cells wide)
+const symbolsLarge: { [key: number]: number[][] } = {
+	0: [
+		[1, 3], [1, 4],  // Top vertical line
+		[2, 2], [2, 3], [2, 4], [2, 5],  // Top curve
+		[3, 1], [3, 2], [3, 5], [3, 6],  // Upper left part
+		[4, 1], [4, 2],  // Left side
+		[5, 2], [5, 3], [5, 4],  // Middle horizontal
+		[6, 4], [6, 5], [6, 6],  // Right side
+		[7, 5], [7, 6],  // Lower right part
+		[8, 1], [8, 2], [8, 5], [8, 6],  // Bottom curve
+		[9, 2], [9, 3], [9, 4], [9, 5],  // Bottom
+		[10, 3], [10, 4]  // Bottom vertical line
+	]
 };
 
 // Function to set a digit as pending cells in the grid (displayed before becoming alive)
@@ -270,4 +413,60 @@ function setDigitAsPending(
 
         currentCol += 4;  // Space between digits
     }
+}
+
+// Function to display large digits as initial cells in the center of the grid
+function setLargeDigitsAsInitial(
+	grid: GridType,
+	digit: string,
+	pendingCells: PendingCell[]
+) {
+	// Calculate dimensions needed for the display
+	const dollarWidth = 7;  // Width of large dollar sign
+	const digitWidth = 8;  // Width of large digits
+	const digitSpacing = 2;  // Space between digits
+	const totalWidth = dollarWidth + digitSpacing + (digit.length * (digitWidth + digitSpacing)) - digitSpacing;
+	const digitHeight = 10;  // Height of large digits (including dollar sign)
+
+	// Center the display on the grid
+	const startRow = Math.floor((CONFIG.ROWS - digitHeight) / 2);
+	const startCol = Math.floor((CONFIG.COLS - totalWidth) / 2);
+
+	let currentCol = startCol;
+
+	// First, draw the large dollar sign
+	const dollarShape = symbolsLarge[0];
+	for (let [row, col] of dollarShape) {
+		const cellRow = row + startRow - 1;  // Adjust to align with digits
+		const cellCol = col + currentCol;
+
+		// Only set cells as initial when they are within the grid's boundaries
+		if (cellCol >= 0 && cellRow >= 0 && cellCol < grid[0].length && cellRow < grid.length) {
+			grid[cellRow][cellCol] = CellState.INITIAL;
+			pendingCells.push({ row: cellRow, col: cellCol, timeout: null as any });
+		}
+	}
+
+	currentCol += dollarWidth + digitSpacing;  // Move past dollar sign
+
+	// Draw each digit
+	for (let i = 0; i < digit.length; i++) {
+		const currentDigit = Number(digit[i]);
+		if (currentDigit in digitsLarge) {
+			for (let [row, col] of digitsLarge[currentDigit]) {
+				const cellRow = row + startRow;
+				const cellCol = col + currentCol;
+
+				// Only set cells as initial when they are within the grid's boundaries
+				if (cellCol >= 0 && cellRow >= 0 && cellCol < grid[0].length && cellRow < grid.length) {
+					grid[cellRow][cellCol] = CellState.INITIAL;
+					pendingCells.push({ row: cellRow, col: cellCol, timeout: null as any });
+				}
+			}
+		} else {
+			console.log('Large digit not recognized: ' + currentDigit);
+		}
+
+		currentCol += digitWidth + digitSpacing;  // Move to next digit position
+	}
 }
