@@ -424,7 +424,7 @@ function setLargeDigitsAsInitial(
 	// Calculate dimensions needed for the display
 	const dollarWidth = 7;  // Width of large dollar sign
 	const digitWidth = 8;  // Width of large digits
-	const digitSpacing = 2;  // Space between digits
+	const digitSpacing = 1;  // Space between digits
 	const totalWidth = dollarWidth + digitSpacing + (digit.length * (digitWidth + digitSpacing)) - digitSpacing;
 	const digitHeight = 10;  // Height of large digits (including dollar sign)
 
