@@ -150,25 +150,16 @@ function ConwaysGameOfLife(props: ChannelProps)  {
             <TotalEl>
                 $<TweenNumber value={Math.floor(total?.raw ?? 0)} />
             </TotalEl>
-            {grid.map((row, i) =>
-                <Row key={i}>
-                    {row.map((cell, j) =>
-                        <Cell key={j} cellState={cell}/>
-                    )}
-                </Row>)}
+            {grid.flat().map((cell, i) =>
+				<Cell key={i} cellState={cell}/>
+			)}
 		</Container>
 	);
 }
-const Row = styled.div`
-    display: flex;
-	flex: 1;
-	width: 100%;
-`;
 
 const Cell = styled.div<{ cellState: CellState }>`
-    flex: 1;
+    box-sizing: border-box;
     border: 0.5px solid rgba(0, 0, 0, 0.3);
-	aspect-ratio: 1;
     background-color: ${({ cellState }) => {
 		if (cellState === CellState.INITIAL) return CONFIG.INITIAL_TOTAL_COLOR;  // Initial total display
 		if (cellState === CellState.PENDING) return 'white';  // Donation pending (white)
@@ -178,8 +169,9 @@ const Cell = styled.div<{ cellState: CellState }>`
 `;
 
 const Container = styled.div`
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(${CONFIG.COLS}, 1fr);
+    grid-template-rows: repeat(${CONFIG.ROWS}, 1fr);
 	position: absolute;
 	background-color: rgb(0, 0, 0);
 	width: 1092px;
