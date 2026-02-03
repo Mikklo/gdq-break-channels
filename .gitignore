@@ -18,3 +18,6 @@ npm-debug.log
 # Build outputs
 /dist
 /test
+
+# Tools and scripts used during dev
+/devtools
