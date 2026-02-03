@@ -6,33 +6,21 @@ import { useListenFor, useReplicant } from 'use-nodecg';
 import styled from '@emotion/styled';
 import TweenNumber from '@gdq/lib/components/TweenNumber';
 
-// ============= CONFIGURATION VARIABLES =============
 const CONFIG = {
-	// Grid configuration
 	COLS: 182,
 	ROWS: 55,
-
-	// Canvas dimensions
 	WIDTH: 1092,
 	HEIGHT: 332,
 
-	// Game speed (milliseconds between updates)
 	GAME_SPEED: 100,
-
-	// Donation display configuration
 	PENDING_DURATION: 3000,
-
-	// Initial total display configuration
 	INITIAL_TOTAL_DURATION: 4000,
+	GRADIENT_ANIMATION_SPEED: 0.0005,
 
-	// Animation settings
-	GRADIENT_ANIMATION_SPEED: 0.0005,  // How fast the gradient shifts (lower = slower)
-
-	// Colors
 	COLORS: {
 		DEAD: 'rgb(23, 1, 58)',
-		DEAD_GRADIENT_END: 'rgb(10, 0, 30)',    // Darker corner for diagonal fade
-		DEAD_GRADIENT_MID: 'rgb(40, 5, 80)',    // Mid color for animated gradient
+		DEAD_GRADIENT_END: 'rgb(10, 0, 30)',
+		DEAD_GRADIENT_MID: 'rgb(40, 5, 80)',
 		ALIVE: 'rgb(81, 0, 119)',
 		PENDING: 'white',
 		INITIAL: 'white',
@@ -40,7 +28,6 @@ const CONFIG = {
 	},
 };
 
-// Cell states
 enum CellState {
 	DEAD = 0,
 	ALIVE = 1,
@@ -70,12 +57,10 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 	const hasShownInitialTotal = useRef(false);
 	const animationFrameRef = useRef<number | null>(null);
 	const lastUpdateRef = useRef<number>(0);
-	const animationTimeRef = useRef<number>(0);
 
 	const cellWidth = CONFIG.WIDTH / CONFIG.COLS;
 	const cellHeight = CONFIG.HEIGHT / CONFIG.ROWS;
 
-	// Draw the grid to canvas
 	const drawGrid = useCallback((timestamp: number) => {
 		const canvas = canvasRef.current;
 		const ctx = canvas?.getContext('2d');
@@ -83,19 +68,14 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 
 		const grid = gridRef.current;
 
-		// Update animation time
-		animationTimeRef.current = timestamp;
-
-		// Animated diagonal gradient - shifts the middle color position over time
-		const gradientPhase = (Math.sin(timestamp * CONFIG.GRADIENT_ANIMATION_SPEED) + 1) / 2; // 0 to 1
+		const gradientPhase = (Math.sin(timestamp * CONFIG.GRADIENT_ANIMATION_SPEED) + 1) / 2;
 		const gradient = ctx.createLinearGradient(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
 		gradient.addColorStop(0, CONFIG.COLORS.DEAD);
-		gradient.addColorStop(0.3 + gradientPhase * 0.4, CONFIG.COLORS.DEAD_GRADIENT_MID); // Shifts between 0.3 and 0.7
+		gradient.addColorStop(0.3 + gradientPhase * 0.4, CONFIG.COLORS.DEAD_GRADIENT_MID);
 		gradient.addColorStop(1, CONFIG.COLORS.DEAD_GRADIENT_END);
 		ctx.fillStyle = gradient;
 		ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
 
-		// Draw non-dead cells
 		for (let r = 0; r < CONFIG.ROWS; r++) {
 			for (let c = 0; c < CONFIG.COLS; c++) {
 				const state = grid[r][c];
@@ -119,7 +99,6 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 			}
 		}
 
-		// Draw grid lines
 		ctx.strokeStyle = CONFIG.COLORS.GRID;
 		ctx.lineWidth = 0.5;
 		for (let r = 0; r <= CONFIG.ROWS; r++) {
@@ -136,7 +115,6 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 		}
 	}, [cellWidth, cellHeight]);
 
-	// Game loop
 	useEffect(() => {
 		const gameLoop = (timestamp: number) => {
 			if (timestamp - lastUpdateRef.current >= CONFIG.GAME_SPEED) {
@@ -156,7 +134,6 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 		};
 	}, [drawGrid]);
 
-	// Display initial total
 	useEffect(() => {
 		if (total?.raw && !hasShownInitialTotal.current) {
 			hasShownInitialTotal.current = true;
@@ -178,20 +155,16 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 		}
 	}, [total]);
 
-	// Handle donations
 	useListenFor('donation', (donation: FormattedDonation) => {
 		const maxX = CONFIG.ROWS - 8;
 		const maxY = CONFIG.COLS - (String(Math.floor(donation.rawAmount)).length * 4 + 8);
 
-		// Exclusion zone for bottom-right corner (where donation total is displayed)
-		// Based on estimated total of 10 chars at ~35px each = ~350px = ~58 cols
-		const excludeBottomRows = 18;  // Bottom 18 rows
-		const excludeRightCols = 65;   // Right 65 columns
+		const excludeBottomRows = 18;
+		const excludeRightCols = 65;
 
 		let startX: number;
 		let startY: number;
 
-		// Keep generating positions until we find one outside the exclusion zone
 		do {
 			startX = Math.floor(Math.random() * Math.max(1, maxX));
 			startY = Math.floor(Math.random() * Math.max(1, maxY));
@@ -290,10 +263,9 @@ function setupGrid(): GridType {
 	return Array.from({ length: CONFIG.ROWS }, () => Array(CONFIG.COLS).fill(CellState.DEAD));
 }
 
-// Small digits for donations
 const digits: { [key: number]: number[][] } = {
 	0: [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3], [4, 1], [4, 3], [5, 1], [5, 2], [5, 3]],
-	1: [[1, 1], [2, 1], [3, 1], [4, 1], [5, 1]],  // Moved to column 1 for variable width
+	1: [[1, 1], [2, 1], [3, 1], [4, 1], [5, 1]],
 	2: [[1, 1], [1, 2], [1, 3], [2, 3], [3, 1], [3, 2], [3, 3], [4, 1], [5, 1], [5, 2], [5, 3]],
 	3: [[1, 1], [1, 2], [1, 3], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 1], [5, 2], [5, 3]],
 	4: [[1, 1], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 3]],
@@ -304,12 +276,10 @@ const digits: { [key: number]: number[][] } = {
 	9: [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 3]],
 };
 
-// Width of each small digit (columns used)
 const digitsWidths: { [key: number]: number } = {
 	0: 3, 1: 1, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3, 9: 3
 };
 
-// Large digits for initial total
 const digitsLarge: { [key: number]: number[][] } = {
 	0: [
 		[1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8],
@@ -494,7 +464,7 @@ function setDigitAsPending(
 				}
 			}
 		}
-		currentCol += (digitsWidths[currentDigit] || 3) + 1;  // Variable width + 1 spacing
+		currentCol += (digitsWidths[currentDigit] || 3) + 1;
 	}
 }
 
