@@ -293,7 +293,7 @@ function setupGrid(): GridType {
 // Small digits for donations
 const digits: { [key: number]: number[][] } = {
 	0: [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3], [4, 1], [4, 3], [5, 1], [5, 2], [5, 3]],
-	1: [[1, 2], [2, 2], [3, 2], [4, 2], [5, 2]],
+	1: [[1, 1], [2, 1], [3, 1], [4, 1], [5, 1]],  // Moved to column 1 for variable width
 	2: [[1, 1], [1, 2], [1, 3], [2, 3], [3, 1], [3, 2], [3, 3], [4, 1], [5, 1], [5, 2], [5, 3]],
 	3: [[1, 1], [1, 2], [1, 3], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 1], [5, 2], [5, 3]],
 	4: [[1, 1], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 3]],
@@ -302,6 +302,11 @@ const digits: { [key: number]: number[][] } = {
 	7: [[1, 1], [1, 2], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3]],
 	8: [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2], [3, 3], [4, 1], [4, 3], [5, 1], [5, 2], [5, 3]],
 	9: [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 2], [3, 3], [4, 3], [5, 3]],
+};
+
+// Width of each small digit (columns used)
+const digitsWidths: { [key: number]: number } = {
+	0: 3, 1: 1, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3, 9: 3
 };
 
 // Large digits for initial total
@@ -489,7 +494,7 @@ function setDigitAsPending(
 				}
 			}
 		}
-		currentCol += 4;
+		currentCol += (digitsWidths[currentDigit] || 3) + 1;  // Variable width + 1 spacing
 	}
 }
 
