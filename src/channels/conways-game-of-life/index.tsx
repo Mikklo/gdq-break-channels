@@ -65,6 +65,8 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 	const lastUpdateRef = useRef<number>(0);
 	const immuneCellsRef = useRef<ImmuneCell[]>([]);
 	const lastDisplayedTotal = useRef<number>(-1);
+	const targetTotal = useRef<number>(0);
+	const tweenIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
 	const cellWidth = CONFIG.WIDTH / CONFIG.COLS;
 	const cellHeight = CONFIG.HEIGHT / CONFIG.ROWS;
@@ -164,13 +166,62 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 		}
 	}, [total]);
 
-	// Update immune cells when total changes
+	// Update immune cells when total changes with count-up animation
 	useEffect(() => {
-		const currentTotal = Math.floor(total?.raw ?? 0);
-		if (currentTotal !== lastDisplayedTotal.current) {
-			lastDisplayedTotal.current = currentTotal;
-			immuneCellsRef.current = setTotalAsImmune(gridRef.current, currentTotal, immuneCellsRef.current);
+		const newTotal = Math.floor(total?.raw ?? 0);
+
+		if (newTotal !== targetTotal.current) {
+			targetTotal.current = newTotal;
+
+			// Clear any existing animation
+			if (tweenIntervalRef.current) {
+				clearInterval(tweenIntervalRef.current);
+			}
+
+			// If this is the first time (displayed is -1), just set it directly
+			if (lastDisplayedTotal.current === -1) {
+				lastDisplayedTotal.current = newTotal;
+				immuneCellsRef.current = setTotalAsImmune(gridRef.current, newTotal, immuneCellsRef.current);
+				return;
+			}
+
+			const startValue = lastDisplayedTotal.current;
+			const endValue = newTotal;
+			const difference = endValue - startValue;
+			const duration = Math.min(2000, Math.max(500, Math.abs(difference) * 2)); // 500ms to 2s based on difference
+			const steps = Math.min(60, Math.abs(difference)); // Max 60 steps
+			const stepDuration = duration / steps;
+			let currentStep = 0;
+
+			tweenIntervalRef.current = setInterval(() => {
+				currentStep++;
+				const progress = currentStep / steps;
+				// Ease out cubic for smooth deceleration
+				const easedProgress = 1 - Math.pow(1 - progress, 3);
+				const displayValue = Math.floor(startValue + difference * easedProgress);
+
+				if (displayValue !== lastDisplayedTotal.current) {
+					lastDisplayedTotal.current = displayValue;
+					immuneCellsRef.current = setTotalAsImmune(gridRef.current, displayValue, immuneCellsRef.current);
+				}
+
+				if (currentStep >= steps) {
+					// Ensure we end on the exact target
+					lastDisplayedTotal.current = endValue;
+					immuneCellsRef.current = setTotalAsImmune(gridRef.current, endValue, immuneCellsRef.current);
+					if (tweenIntervalRef.current) {
+						clearInterval(tweenIntervalRef.current);
+						tweenIntervalRef.current = null;
+					}
+				}
+			}, stepDuration);
 		}
+
+		return () => {
+			if (tweenIntervalRef.current) {
+				clearInterval(tweenIntervalRef.current);
+			}
+		};
 	}, [total]);
 
 	useListenFor('donation', (donation: FormattedDonation) => {
