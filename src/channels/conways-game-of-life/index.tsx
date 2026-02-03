@@ -4,7 +4,6 @@ import { useEffect, useRef, useCallback } from 'react';
 
 import { useListenFor, useReplicant } from 'use-nodecg';
 import styled from '@emotion/styled';
-import TweenNumber from '@gdq/lib/components/TweenNumber';
 
 const CONFIG = {
 	COLS: 182,
@@ -24,6 +23,7 @@ const CONFIG = {
 		ALIVE: 'rgb(81, 0, 119)',
 		PENDING: 'white',
 		INITIAL: 'white',
+		IMMUNE: 'rgb(182, 47, 245)',
 		GRID: 'rgba(0, 0, 0, 0.3)',
 	},
 };
@@ -33,6 +33,7 @@ enum CellState {
 	ALIVE = 1,
 	PENDING = 2,
 	INITIAL = 3,
+	IMMUNE = 4,
 }
 
 type GridType = CellState[][];
@@ -41,6 +42,11 @@ interface PendingCell {
 	row: number;
 	col: number;
 	timeout: NodeJS.Timeout;
+}
+
+interface ImmuneCell {
+	row: number;
+	col: number;
 }
 
 registerChannel('Conways Game of Life', 13, ConwaysGameOfLife, {
@@ -57,6 +63,8 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 	const hasShownInitialTotal = useRef(false);
 	const animationFrameRef = useRef<number | null>(null);
 	const lastUpdateRef = useRef<number>(0);
+	const immuneCellsRef = useRef<ImmuneCell[]>([]);
+	const lastDisplayedTotal = useRef<number>(-1);
 
 	const cellWidth = CONFIG.WIDTH / CONFIG.COLS;
 	const cellHeight = CONFIG.HEIGHT / CONFIG.ROWS;
@@ -88,6 +96,9 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 							case CellState.PENDING:
 							case CellState.INITIAL:
 								ctx.fillStyle = CONFIG.COLORS.PENDING;
+								break;
+							case CellState.IMMUNE:
+								ctx.fillStyle = CONFIG.COLORS.IMMUNE;
 								break;
 						}
 						ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth - 0.5, cellHeight - 0.5);
@@ -153,20 +164,57 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 		}
 	}, [total]);
 
+	// Update immune cells when total changes
+	useEffect(() => {
+		const currentTotal = Math.floor(total?.raw ?? 0);
+		if (currentTotal !== lastDisplayedTotal.current) {
+			lastDisplayedTotal.current = currentTotal;
+			immuneCellsRef.current = setTotalAsImmune(gridRef.current, currentTotal, immuneCellsRef.current);
+		}
+	}, [total]);
+
 	useListenFor('donation', (donation: FormattedDonation) => {
 		const maxX = CONFIG.ROWS - 8;
 		const maxY = CONFIG.COLS - (String(Math.floor(donation.rawAmount)).length * 4 + 8);
 
-		const excludeBottomRows = 18;
-		const excludeRightCols = 65;
+		// Check if a donation position would overlap with immune cells
+		const wouldOverlapImmune = (testStartX: number, testStartY: number): boolean => {
+			const immuneSet = new Set(immuneCellsRef.current.map((c) => `${c.row},${c.col}`));
+			const donationStr = String(Math.floor(donation.rawAmount));
+
+			// Check dollar sign cells
+			for (const [row, col] of symbols[0]) {
+				const cellRow = row + testStartX - 1;
+				const cellCol = col + testStartY;
+				if (immuneSet.has(`${cellRow},${cellCol}`)) return true;
+			}
+
+			// Check digit cells
+			let currentCol = testStartY + 4;
+			for (let i = 0; i < donationStr.length; i++) {
+				const currentDigit = Number(donationStr[i]);
+				if (currentDigit in digits) {
+					for (const [row, col] of digits[currentDigit]) {
+						const cellRow = row + testStartX;
+						const cellCol = col + currentCol;
+						if (immuneSet.has(`${cellRow},${cellCol}`)) return true;
+					}
+				}
+				currentCol += (digitsWidths[currentDigit] || 3) + 1;
+			}
+			return false;
+		};
 
 		let startX: number;
 		let startY: number;
+		let attempts = 0;
+		const maxAttempts = 50;
 
 		do {
 			startX = Math.floor(Math.random() * Math.max(1, maxX));
 			startY = Math.floor(Math.random() * Math.max(1, maxY));
-		} while (startX > CONFIG.ROWS - excludeBottomRows && startY > CONFIG.COLS - excludeRightCols);
+			attempts++;
+		} while (wouldOverlapImmune(startX, startY) && attempts < maxAttempts);
 
 		const newPendingCells: PendingCell[] = [];
 		setDigitAsPending(gridRef.current, String(Math.floor(donation.rawAmount)), startX, startY, newPendingCells);
@@ -188,9 +236,6 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 	return (
 		<Container>
 			<Canvas ref={canvasRef} width={CONFIG.WIDTH} height={CONFIG.HEIGHT} />
-			<TotalEl>
-				$<TweenNumber value={Math.floor(total?.raw ?? 0)} />
-			</TotalEl>
 		</Container>
 	);
 }
@@ -208,16 +253,6 @@ const Container = styled.div`
 	height: ${CONFIG.HEIGHT}px;
 	padding: 0;
 	margin: 0;
-`;
-
-const TotalEl = styled.div`
-	font-family: gdqpixel;
-	font-size: 46px;
-	color: #b62ff5ff;
-	position: absolute;
-	right: 1%;
-	bottom: 5%;
-	z-index: 1;
 `;
 
 function countLiveNeighbors(grid: GridType, row: number, col: number): number {
@@ -240,7 +275,12 @@ function updateGrid(grid: GridType): GridType {
 
 	for (let i = 0; i < grid.length; i++) {
 		for (let j = 0; j < grid[i].length; j++) {
-			if (grid[i][j] === CellState.PENDING || grid[i][j] === CellState.INITIAL) continue;
+			if (
+				grid[i][j] === CellState.PENDING ||
+				grid[i][j] === CellState.INITIAL ||
+				grid[i][j] === CellState.IMMUNE
+			)
+				continue;
 
 			const liveNeighbors = countLiveNeighbors(grid, i, j);
 
@@ -1045,6 +1085,48 @@ const symbolsLarge: { [key: number]: number[][] } = {
 
 const symbolsLargeHeight = 12;
 
+// Doubled digits (each pixel becomes 2x2)
+function createDoubledDigits(): { [key: number]: number[][] } {
+	const doubled: { [key: number]: number[][] } = {};
+	for (const [digit, coords] of Object.entries(digits)) {
+		doubled[Number(digit)] = coords.flatMap(([row, col]) => [
+			[row * 2 - 1, col * 2 - 1],
+			[row * 2 - 1, col * 2],
+			[row * 2, col * 2 - 1],
+			[row * 2, col * 2],
+		]);
+	}
+	return doubled;
+}
+
+const digitsDoubled = createDoubledDigits();
+
+const digitsDoubledWidths: { [key: number]: number } = {
+	0: 6,
+	1: 2,
+	2: 6,
+	3: 6,
+	4: 6,
+	5: 6,
+	6: 6,
+	7: 6,
+	8: 6,
+	9: 6,
+};
+
+// Doubled dollar sign (original is in symbols[0])
+function createDoubledSymbol(): number[][] {
+	return symbols[0].flatMap(([row, col]) => [
+		[row * 2 - 1, col * 2 - 1],
+		[row * 2 - 1, col * 2],
+		[row * 2, col * 2 - 1],
+		[row * 2, col * 2],
+	]);
+}
+
+const symbolDoubled = createDoubledSymbol();
+const symbolDoubledWidth = 6;
+
 function setDigitAsPending(
 	grid: GridType,
 	digit: string,
@@ -1123,4 +1205,67 @@ function setLargeDigitsAsInitial(grid: GridType, digit: string, pendingCells: Pe
 		}
 		currentCol += (digitsLargeWidths[currentDigit] || 7) + digitSpacing;
 	}
+}
+
+function setTotalAsImmune(grid: GridType, total: number, previousImmuneCells: ImmuneCell[]): ImmuneCell[] {
+	// Clear previous immune cells
+	for (const cell of previousImmuneCells) {
+		if (cell.row >= 0 && cell.row < grid.length && cell.col >= 0 && cell.col < grid[0].length) {
+			grid[cell.row][cell.col] = CellState.DEAD;
+		}
+	}
+
+	const newImmuneCells: ImmuneCell[] = [];
+	const digit = String(Math.floor(total));
+	const digitSpacing = 1;
+	const dollarSignHeight = 14; // doubled from 7 (original symbols[0] is 7 rows)
+	const digitHeight = 10; // doubled from 5
+	const totalHeight = Math.max(dollarSignHeight, digitHeight);
+
+	// Calculate total width
+	let totalWidth = symbolDoubledWidth + digitSpacing;
+	for (let i = 0; i < digit.length; i++) {
+		const d = Number(digit[i]);
+		totalWidth += (digitsDoubledWidths[d] || 6) + digitSpacing;
+	}
+	totalWidth -= digitSpacing;
+
+	// Position in bottom-right corner with some padding
+	const paddingRight = 1;
+	const paddingBottom = 1;
+	const startRow = CONFIG.ROWS - totalHeight - paddingBottom;
+	const startCol = CONFIG.COLS - totalWidth - paddingRight;
+
+	let currentCol = startCol;
+
+	// Draw dollar sign
+	for (const [row, col] of symbolDoubled) {
+		const cellRow = row + startRow - 1;
+		const cellCol = col + currentCol - 1;
+		if (cellCol >= 0 && cellRow >= 0 && cellCol < grid[0].length && cellRow < grid.length) {
+			grid[cellRow][cellCol] = CellState.IMMUNE;
+			newImmuneCells.push({ row: cellRow, col: cellCol });
+		}
+	}
+
+	currentCol += symbolDoubledWidth + digitSpacing;
+
+	// Draw digits (vertically centered relative to dollar sign)
+	const digitVerticalOffset = Math.floor((dollarSignHeight - digitHeight) / 2);
+	for (let i = 0; i < digit.length; i++) {
+		const currentDigit = Number(digit[i]);
+		if (currentDigit in digitsDoubled) {
+			for (const [row, col] of digitsDoubled[currentDigit]) {
+				const cellRow = row + startRow - 1 + digitVerticalOffset;
+				const cellCol = col + currentCol - 1;
+				if (cellCol >= 0 && cellRow >= 0 && cellCol < grid[0].length && cellRow < grid.length) {
+					grid[cellRow][cellCol] = CellState.IMMUNE;
+					newImmuneCells.push({ row: cellRow, col: cellCol });
+				}
+			}
+		}
+		currentCol += (digitsDoubledWidths[currentDigit] || 6) + digitSpacing;
+	}
+
+	return newImmuneCells;
 }
