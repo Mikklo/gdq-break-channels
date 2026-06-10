@@ -16,6 +16,9 @@ const CONFIG = {
 	INITIAL_TOTAL_DURATION: 4000,
 	GRADIENT_ANIMATION_SPEED: 0.0005,
 
+	RAINBOW_DURATION: 30000,      // ms — how long star-power lasts
+	RAINBOW_FLOW_SPEED: 0.15,     // hue degrees per ms — controls scroll speed
+
 	COLORS: {
 		DEAD: 'rgb(23, 1, 58)',
 		DEAD_GRADIENT_END: 'rgb(10, 0, 30)',
@@ -67,6 +70,7 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 	const lastDisplayedTotal = useRef<number>(-1);
 	const targetTotal = useRef<number>(0);
 	const tweenIntervalRef = useRef<NodeJS.Timeout | null>(null);
+	const rainbowStartRef = useRef<number | null>(null);
 
 	const cellWidth = CONFIG.WIDTH / CONFIG.COLS;
 	const cellHeight = CONFIG.HEIGHT / CONFIG.ROWS;
@@ -87,21 +91,31 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 			ctx.fillStyle = gradient;
 			ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
 
+			const isRainbow =
+				rainbowStartRef.current !== null &&
+				timestamp - rainbowStartRef.current < CONFIG.RAINBOW_DURATION;
+
 			for (let r = 0; r < CONFIG.ROWS; r++) {
 				for (let c = 0; c < CONFIG.COLS; c++) {
 					const state = grid[r][c];
 					if (state !== CellState.DEAD) {
-						switch (state) {
-							case CellState.ALIVE:
-								ctx.fillStyle = CONFIG.COLORS.ALIVE;
-								break;
-							case CellState.PENDING:
-							case CellState.INITIAL:
-								ctx.fillStyle = CONFIG.COLORS.PENDING;
-								break;
-							case CellState.IMMUNE:
-								ctx.fillStyle = CONFIG.COLORS.IMMUNE;
-								break;
+						if (isRainbow && (state === CellState.ALIVE || state === CellState.IMMUNE)) {
+							const hue =
+								((c / CONFIG.COLS) * 360 + timestamp * CONFIG.RAINBOW_FLOW_SPEED) % 360;
+							ctx.fillStyle = `hsl(${hue}, 100%, 55%)`;
+						} else {
+							switch (state) {
+								case CellState.ALIVE:
+									ctx.fillStyle = CONFIG.COLORS.ALIVE;
+									break;
+								case CellState.PENDING:
+								case CellState.INITIAL:
+									ctx.fillStyle = CONFIG.COLORS.PENDING;
+									break;
+								case CellState.IMMUNE:
+									ctx.fillStyle = CONFIG.COLORS.IMMUNE;
+									break;
+							}
 						}
 						ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth - 0.5, cellHeight - 0.5);
 					}
@@ -282,6 +296,10 @@ function ConwaysGameOfLife(_props: ChannelProps) {
 			cell.timeout = timeout;
 		});
 		pendingCellsRef.current.push(...newPendingCells);
+	});
+
+	useListenFor('subscription', () => {
+		rainbowStartRef.current = performance.now();
 	});
 
 	return (
